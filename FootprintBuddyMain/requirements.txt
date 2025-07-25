@@ -1,1 +1,6 @@
-streamlit
+# Requirements
+   
+Installations
+
+- Python 3.8 or higher
+- pip (Python package manager)
