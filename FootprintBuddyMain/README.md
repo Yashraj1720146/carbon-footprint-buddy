@@ -1,4 +1,4 @@
-# 🌍 Footprint Buddy
+# Footprint Buddy
 
 **Footprint Buddy** is an interactive web app built with [Streamlit](https://streamlit.io/) to help users calculate, understand, and reduce their **annual carbon footprint** in a personalized manner.
 
@@ -6,34 +6,33 @@
 
 ---
 
-## ✨ Features
-
-🟢 **User Authentication**  
+# Features
+ **User Authentication**  
 - Secure login/signup system (with SHA-256 password hashing)
 - JSON-based user data persistence
 
-🟢 **Carbon Footprint Calculator**  
+ **Carbon Footprint Calculator**  
 Covers 8 key areas of your lifestyle:
-1. 🚗 Commute habits
-2. ✈️ Flight travel
-3. 💡 Electricity consumption
-4. 🍳 Cooking fuels used
-5. 🍽️ Diet preferences
-6. 🚰 Water usage
-7. 🗑️ Waste generation & recycling
-8. 📺 Streaming hours
+1.  Commute habits
+2.  Flight travel
+3.  Electricity consumption
+4.  Cooking fuels used
+5.  Diet preferences
+6.  Water usage
+7.  Waste generation & recycling
+8.  Streaming hours
 
-🟢 **Instant Feedback**
+ **Instant Feedback**
 - Total CO₂ emissions in tonnes/year
 - Emission level classification: Low, Moderate, High, Very High
 - Personalized eco-tips
 
-🟢 **Interactive Visualizations**
+ **Interactive Visualizations**
 
-- 📊 **Pie Chart** of emissions by sector
-- 📋 **Bar Graph** to compare contributions
+- **Pie Chart** of emissions by sector
+- **Bar Graph** to compare contributions
 
-🟢 **Sleek and Responsive UI**
+  **Sleek and Responsive UI**
 - Styled with custom **CSS**, **Google Fonts**, and responsive layout
 - Beautiful modern visuals for better engagement
 
@@ -55,15 +54,15 @@ Covers 8 key areas of your lifestyle:
 
 
 
-## 🛠️ How to Run Locally
+# How to Run Locally
 
-### ✅ Prerequisites
+###  Prerequisites
 
 - Python 3.8+
 - `pip` (Python package manager)
 - (Optional) Create a virtual environment with `venv` or `conda`
 
-### 📥 Installation
+### Installation
 
 ```bash
 # Clone the repository
