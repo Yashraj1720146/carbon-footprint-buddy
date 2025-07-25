@@ -1,0 +1,26 @@
+# Ignore Python cache and compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Ignore virtual environments (common names)
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Ignore system files/macOS
+.DS_Store
+
+# Ignore users file (contains login info - keep private)
+users.json
+
+# VS Code settings (optional)
+.vscode/
+
+# Streamlit-specific
+.streamlit/config.toml
