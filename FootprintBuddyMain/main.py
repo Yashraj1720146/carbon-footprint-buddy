@@ -5,23 +5,28 @@ import hashlib
 import base64
 import sqlite3
 import plotly.graph_objects as go
+import hmac
 
 # --- Page Config ---
 st.set_page_config(page_title="Footprint Buddy", layout="wide")
 
 # --- Helper Functions for User Management (SQLite) ---
 DB_PATH = "users.db"
+CURRENT_PBKDF2_ITERS = 310_000  # target iterations for PBKDF2
+
+def db_conn():
+    return sqlite3.connect(DB_PATH, timeout=30)
 
 # Legacy SHA256 (kept for backward compatibility)
 def legacy_sha256(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 # New PBKDF2-based hashing with per-user salt
-def hash_password_pbkdf2(password, salt=None, iterations=100_000):
+def hash_password_pbkdf2(password, salt=None, iterations=CURRENT_PBKDF2_ITERS):
     if salt is None:
         salt = os.urandom(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
-    return base64.b64encode(salt).decode(), base64.b64encode(dk).decode(), iterations
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return base64.b64encode(salt).decode("ascii"), base64.b64encode(dk).decode("ascii"), iterations
 
 def verify_password(password, record):
     """
@@ -31,21 +36,21 @@ def verify_password(password, record):
     """
     if isinstance(record, str):
         # legacy
-        return record == legacy_sha256(password)
+        return hmac.compare_digest(record, legacy_sha256(password))
     if isinstance(record, dict):
         try:
             salt = base64.b64decode(record.get("salt", ""))
-            iters = int(record.get("iter", 100_000))
-            expected = record.get("hash", "")
-            dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iters)
-            return base64.b64encode(dk).decode() == expected
+            iters = int(record.get("iter", CURRENT_PBKDF2_ITERS))
+            expected = base64.b64decode(record.get("hash", ""))
+            dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
+            return hmac.compare_digest(dk, expected)
         except Exception:
             return False
     return False
 
 def init_db():
     # Make the app self-initializing
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_conn() as conn:
         conn.execute("PRAGMA journal_mode=WAL;")  # better concurrency for Streamlit
         conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -57,21 +62,21 @@ def init_db():
         conn.commit()
 
 def get_user_password_blob(username):
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT password FROM users WHERE username = ?", (username,))
         row = cur.fetchone()
         return row[0] if row else None
 
 def set_user_password_blob(username, blob):
-    with sqlite3.connect(DB_PATH) as conn:
+    with db_conn() as conn:
         cur = conn.cursor()
         cur.execute("UPDATE users SET password = ? WHERE username = ?", (blob, username))
         conn.commit()
 
 def create_user_row(username, password_blob):
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with db_conn() as conn:
             cur = conn.cursor()
             cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password_blob))
             conn.commit()
@@ -103,11 +108,13 @@ def login(username, password):
 
     ok = verify_password(password, record)
 
-    # Auto-upgrade legacy SHA256 to PBKDF2 on successful login
-    if ok and isinstance(record, str):
-        salt_b64, hash_b64, iters = hash_password_pbkdf2(password)
-        new_record = {"salt": salt_b64, "hash": hash_b64, "iter": iters}
-        set_user_password_blob(username, json.dumps(new_record))
+    # Auto-upgrade legacy SHA256 to PBKDF2 or bump low-iteration PBKDF2 on successful login
+    if ok:
+        needs_rehash = isinstance(record, str) or (isinstance(record, dict) and int(record.get("iter", 0)) < CURRENT_PBKDF2_ITERS)
+        if needs_rehash:
+            salt_b64, hash_b64, iters = hash_password_pbkdf2(password)
+            new_record = {"salt": salt_b64, "hash": hash_b64, "iter": iters}
+            set_user_password_blob(username, json.dumps(new_record))
 
     return ok
 
@@ -413,10 +420,10 @@ elif not st.session_state.show_results:
 
     # --- Emissions Calculation (with fixes) ---
 
-    # 1. Commute (annualized). Use days/week; carpool reduction only for cars.
+    # 1. Commute (annualized). Use days/week; carpool reduction only for cars, including Electric Car.
     annual_commute_km = commute_distance * commute_days_per_week * 52
     base_commute_factor = EMISSION_FACTORS["India"]["Transportation"][commute_mode]
-    is_car = commute_mode.startswith("Car")
+    is_car = commute_mode.startswith("Car") or (commute_mode == "Electric Car")
     if is_car and carpooling > 0:
         commute_emissions_kg = base_commute_factor * (annual_commute_km / max(1, carpooling))
     else:
@@ -446,6 +453,9 @@ elif not st.session_state.show_results:
     # 4. Cooking Fuel (annualized; per-person via cooking_people; efficient stove reduction)
     cooking_fuel_amount_year = cooking_fuel_amount * 12
     cooking_factor = EMISSION_FACTORS["India"]["CookingFuel"][cooking_fuel_type]
+    # Use electricity source factor if cooking uses electricity
+    if cooking_fuel_type == "Electricity":
+        cooking_factor = ELECTRICITY_BY_SOURCE.get(elec_source, EMISSION_FACTORS["India"]["Electricity"])
     cooking_fuel_emissions_kg = cooking_factor * cooking_fuel_amount_year
 
     # Efficient stove reduction (e.g., 20%)
