@@ -3,13 +3,14 @@ import json
 import os
 import hashlib
 import base64
+import sqlite3
 import plotly.graph_objects as go
 
 # --- Page Config ---
 st.set_page_config(page_title="Footprint Buddy", layout="wide")
 
-# --- Helper Functions for User Management ---
-USERS_FILE = "users.json"
+# --- Helper Functions for User Management (SQLite) ---
+DB_PATH = "users.db"
 
 # Legacy SHA256 (kept for backward compatibility)
 def legacy_sha256(password):
@@ -42,34 +43,94 @@ def verify_password(password, record):
             return False
     return False
 
-def load_users():
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            # Corrupted file fallback
-            return {}
-    return {}
+def init_db():
+    # Make the app self-initializing
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("PRAGMA journal_mode=WAL;")  # better concurrency for Streamlit
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )
+        """)
+        conn.commit()
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
+def get_user_password_blob(username):
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT password FROM users WHERE username = ?", (username,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+def set_user_password_blob(username, blob):
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET password = ? WHERE username = ?", (blob, username))
+        conn.commit()
+
+def create_user_row(username, password_blob):
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password_blob))
+            conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        # Username already exists
+        return False
 
 def signup(username, password):
-    users = load_users()
-    if username in users:
-        return False  # Username exists
+    # Basic guard (UI already validates)
+    if not username or not password:
+        return False
+    if get_user_password_blob(username) is not None:
+        return False
     salt_b64, hash_b64, iters = hash_password_pbkdf2(password)
-    users[username] = {"salt": salt_b64, "hash": hash_b64, "iter": iters}
-    save_users(users)
-    return True
+    record = {"salt": salt_b64, "hash": hash_b64, "iter": iters}
+    return create_user_row(username, json.dumps(record))
 
 def login(username, password):
-    users = load_users()
-    if username not in users:
+    blob = get_user_password_blob(username)
+    if blob is None:
         return False
-    return verify_password(password, users[username])
+
+    # Parse stored password; can be JSON (PBKDF2) or legacy SHA256 hex string
+    try:
+        record = json.loads(blob)
+    except Exception:
+        record = blob  # legacy string
+
+    ok = verify_password(password, record)
+
+    # Auto-upgrade legacy SHA256 to PBKDF2 on successful login
+    if ok and isinstance(record, str):
+        salt_b64, hash_b64, iters = hash_password_pbkdf2(password)
+        new_record = {"salt": salt_b64, "hash": hash_b64, "iter": iters}
+        set_user_password_blob(username, json.dumps(new_record))
+
+    return ok
+
+# Optional: one-time migration from users.json to SQLite
+def migrate_json_users_to_sqlite(json_path="users.json"):
+    if not os.path.exists(json_path):
+        return
+    try:
+        with open(json_path, "r") as f:
+            users = json.load(f)
+        for username, record in users.items():
+            if get_user_password_blob(username) is not None:
+                continue
+            blob = json.dumps(record) if isinstance(record, dict) else record
+            create_user_row(username, blob)
+        os.rename(json_path, json_path + ".migrated.bak")
+        print("✅ Migration complete. Backup created:", json_path + ".migrated.bak")
+    except Exception as e:
+        print("⚠️ Migration failed:", e)
+
+# Initialize DB (and optionally migrate old JSON users once)
+init_db()
+# migrate_json_users_to_sqlite()  # <- run once if you have existing users.json
 
 # --- Session State Initialization ---
 if "logged_in" not in st.session_state:
