@@ -35,6 +35,9 @@ Sleek and Responsive UI
 - Styled with custom CSS, Google Fonts, and responsive layout
 - Modern visuals for better engagement
 
+PDF Download
+Users can download their personalized carbon footprint report as a PDF.
+
 ---
 
 Technologies Used
