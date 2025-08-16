@@ -278,7 +278,7 @@ st.markdown("""
             min-height: 100vh;
             width: 100vw;
             position: fixed;
-            left: 0;
+            left: 0,
             top: 0;
             z-index: -1;
         }
@@ -660,28 +660,35 @@ else:
         "Reduce, reuse, recycle, and inspire others to join you on the journey to lower carbon emissions. Together, we can make a difference."
     )
 
-    # --- PDF Download (New) ---
+    # --- PDF Download (fixed: always return bytes for Streamlit) ---
     def make_pdf(results_dict, username):
-        # Build a simple, portable PDF (uses built-in Helvetica; avoid non-Latin-1 emojis in PDF text)
+        def to_latin1(s):
+            try:
+                return str(s).encode("latin-1", "replace").decode("latin-1")
+            except Exception:
+                return str(s)
+
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
         pdf.set_title("Footprint Buddy - Results")
         pdf.set_author("Footprint Buddy")
 
+        epw = pdf.w - pdf.l_margin - pdf.r_margin  # effective page width
+
         # Header
         pdf.set_font("Helvetica", "B", 20)
-        pdf.cell(0, 10, "Footprint Buddy - Carbon Footprint Report", ln=1)
+        pdf.cell(0, 10, to_latin1("Footprint Buddy - Carbon Footprint Report"), ln=1)
         pdf.set_font("Helvetica", size=12)
         dt = datetime.now().strftime("%Y-%m-%d %H:%M")
-        pdf.cell(0, 8, f"User: {username}", ln=1)
-        pdf.cell(0, 8, f"Generated: {dt}", ln=1)
+        pdf.cell(0, 8, to_latin1(f"User: {username}"), ln=1)
+        pdf.cell(0, 8, to_latin1(f"Generated: {dt}"), ln=1)
         pdf.ln(4)
 
         # Total and classification
         total_val = results_dict.get("Total", 0.0)
         pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, f"Total Footprint: {total_val:.2f} tonnes CO2/year", ln=1)
+        pdf.cell(0, 10, to_latin1(f"Total Footprint: {total_val:.2f} tonnes CO2/year"), ln=1)
 
         if total_val < 2.0:
             classification = "LOW"
@@ -697,31 +704,36 @@ else:
             note = "This level of emission is not sustainable. Consider major changes."
 
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, f"Classification: {classification}", ln=1)
+        pdf.cell(0, 8, to_latin1(f"Classification: {classification}"), ln=1)
         pdf.set_font("Helvetica", "", 11)
-        pdf.multi_cell(0, 6, note)
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(epw, 6, to_latin1(note))
         pdf.ln(2)
 
         # Breakdown table
+        col1_w = epw * 0.6
+        col2_w = epw * 0.4
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(100, 8, "Category", border=1)
-        pdf.cell(0, 8, "Tonnes CO2/year", border=1, ln=1)
+        pdf.cell(col1_w, 8, to_latin1("Category"), border=1)
+        pdf.cell(col2_w, 8, to_latin1("Tonnes CO2/year"), border=1, ln=1)
         pdf.set_font("Helvetica", "", 11)
 
         cats = ["Commute", "Flight", "Electricity", "Cooking Fuel", "Diet", "Water", "Waste", "Streaming"]
         for cat in cats:
-            pdf.cell(100, 8, cat, border=1)
-            pdf.cell(0, 8, f"{results_dict.get(cat, 0.0):.2f}", border=1, ln=1)
+            pdf.cell(col1_w, 8, to_latin1(cat), border=1)
+            pdf.cell(col2_w, 8, to_latin1(f"{results_dict.get(cat, 0.0):.2f}"), border=1, ln=1)
 
         # Inputs summary
         pdf.ln(4)
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "Inputs Summary", ln=1)
+        pdf.cell(0, 8, to_latin1("Inputs Summary"), ln=1)
         pdf.set_font("Helvetica", "", 11)
+
         d = results_dict.get("Details", {})
 
         def add_kv(k, v):
-            pdf.multi_cell(0, 6, f"{k}: {v}")
+            pdf.set_x(pdf.l_margin)
+            pdf.multi_cell(epw, 6, to_latin1(f"{k}: {v}"))
 
         add_kv("Commute Mode", d.get("Commute Mode", ""))
         add_kv("Commute Days/Week", d.get("Commute Days/Week", ""))
@@ -744,9 +756,17 @@ else:
 
         pdf.ln(2)
         pdf.set_font("Helvetica", "I", 10)
-        pdf.multi_cell(0, 5, "Note: Streaming emissions include only network and datacenter. Household electricity is apportioned per person. Cooking electricity is subtracted from household electricity to avoid double counting.")
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(epw, 5, to_latin1("Note: Streaming emissions include only network and datacenter. Household electricity is apportioned per person. Cooking electricity is subtracted from household electricity to avoid double counting."))
 
-        return pdf.output(dest="S").encode("latin-1")
+        out = pdf.output(dest="S")
+        # Normalize to pure bytes for Streamlit
+        if isinstance(out, bytes):
+            return out
+        if isinstance(out, bytearray):
+            return bytes(out)
+        # PyFPDF compatibility (returns str)
+        return out.encode("latin-1", "replace")
 
     if FPDF_AVAILABLE:
         pdf_bytes = make_pdf(results, st.session_state.current_user)
