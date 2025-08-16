@@ -6,6 +6,14 @@ import base64
 import sqlite3
 import plotly.graph_objects as go
 import hmac
+from datetime import datetime
+
+# Optional PDF dependency: pip install fpdf2
+try:
+    from fpdf import FPDF
+    FPDF_AVAILABLE = True
+except Exception:
+    FPDF_AVAILABLE = False
 
 # --- Page Config ---
 st.set_page_config(page_title="Footprint Buddy", layout="wide")
@@ -651,6 +659,105 @@ else:
         "🌱 Every small step counts! By making conscious choices in your daily life, you can help create a cleaner, greener planet for future generations. "
         "Reduce, reuse, recycle, and inspire others to join you on the journey to lower carbon emissions. Together, we can make a difference."
     )
+
+    # --- PDF Download (New) ---
+    def make_pdf(results_dict, username):
+        # Build a simple, portable PDF (uses built-in Helvetica; avoid non-Latin-1 emojis in PDF text)
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        pdf.set_title("Footprint Buddy - Results")
+        pdf.set_author("Footprint Buddy")
+
+        # Header
+        pdf.set_font("Helvetica", "B", 20)
+        pdf.cell(0, 10, "Footprint Buddy - Carbon Footprint Report", ln=1)
+        pdf.set_font("Helvetica", size=12)
+        dt = datetime.now().strftime("%Y-%m-%d %H:%M")
+        pdf.cell(0, 8, f"User: {username}", ln=1)
+        pdf.cell(0, 8, f"Generated: {dt}", ln=1)
+        pdf.ln(4)
+
+        # Total and classification
+        total_val = results_dict.get("Total", 0.0)
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.cell(0, 10, f"Total Footprint: {total_val:.2f} tonnes CO2/year", ln=1)
+
+        if total_val < 2.0:
+            classification = "LOW"
+            note = "Your lifestyle is eco-friendly and close to sustainable global targets."
+        elif 2.0 <= total_val <= 4.5:
+            classification = "MODERATE"
+            note = "You're doing okay, but there's room for improvement."
+        elif 4.5 < total_val <= 7.0:
+            classification = "HIGH"
+            note = "Try to reduce flights, energy use, or shift to greener alternatives."
+        else:
+            classification = "VERY HIGH"
+            note = "This level of emission is not sustainable. Consider major changes."
+
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, f"Classification: {classification}", ln=1)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.multi_cell(0, 6, note)
+        pdf.ln(2)
+
+        # Breakdown table
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(100, 8, "Category", border=1)
+        pdf.cell(0, 8, "Tonnes CO2/year", border=1, ln=1)
+        pdf.set_font("Helvetica", "", 11)
+
+        cats = ["Commute", "Flight", "Electricity", "Cooking Fuel", "Diet", "Water", "Waste", "Streaming"]
+        for cat in cats:
+            pdf.cell(100, 8, cat, border=1)
+            pdf.cell(0, 8, f"{results_dict.get(cat, 0.0):.2f}", border=1, ln=1)
+
+        # Inputs summary
+        pdf.ln(4)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Inputs Summary", ln=1)
+        pdf.set_font("Helvetica", "", 11)
+        d = results_dict.get("Details", {})
+
+        def add_kv(k, v):
+            pdf.multi_cell(0, 6, f"{k}: {v}")
+
+        add_kv("Commute Mode", d.get("Commute Mode", ""))
+        add_kv("Commute Days/Week", d.get("Commute Days/Week", ""))
+        add_kv("Carpooling", d.get("Carpooling", ""))
+        add_kv("Short Flights", d.get("Short Flights", ""))
+        add_kv("Long Flights", d.get("Long Flights", ""))
+        add_kv("Flight Class", d.get("Flight Class", ""))
+        add_kv("Electricity Source", d.get("Electricity Source", ""))
+        add_kv("Household Size", d.get("Household Size", ""))
+        add_kv("Cooking Fuel Type", d.get("Cooking Fuel Type", ""))
+        add_kv("Cooking People", d.get("Cooking People", ""))
+        add_kv("Efficient Stove", d.get("Efficient Stove", ""))
+        add_kv("Diet Type", d.get("Diet Type", ""))
+        add_kv("Eating Out (meals/week)", d.get("Eating Out", ""))
+        add_kv("Water Saving", d.get("Water Saving", ""))
+        add_kv("Water Source", d.get("Water Source", ""))
+        add_kv("Recycling %", d.get("Recycling %", ""))
+        add_kv("Waste Types", ", ".join(d.get("Waste Types", [])))
+        add_kv("Streaming Device", d.get("Streaming Device", ""))
+
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "I", 10)
+        pdf.multi_cell(0, 5, "Note: Streaming emissions include only network and datacenter. Household electricity is apportioned per person. Cooking electricity is subtracted from household electricity to avoid double counting.")
+
+        return pdf.output(dest="S").encode("latin-1")
+
+    if FPDF_AVAILABLE:
+        pdf_bytes = make_pdf(results, st.session_state.current_user)
+        st.download_button(
+            label="📄 Download PDF Report",
+            data=pdf_bytes,
+            file_name=f"Footprint_Buddy_{st.session_state.current_user}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+            mime="application/pdf"
+        )
+    else:
+        st.info("To enable PDF download, please install fpdf2 (pip install fpdf2) and rerun the app.")
 
     if st.button("Go Back"):
         st.session_state.show_results = False
