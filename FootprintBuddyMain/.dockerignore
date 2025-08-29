@@ -1,0 +1,28 @@
+# Python junk
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Environments & local configs
+.env
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# App data (don’t ship your local DB)
+users.db
+users.json
+*.migrated.bak
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Git metadata
+.git
+.gitignore
