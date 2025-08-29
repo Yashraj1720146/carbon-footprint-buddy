@@ -1,9 +1,10 @@
 # Requirements
    
-Installations
+#Installations
 
 streamlit==1.28.0
 plotly==5.20.0
 passlib[bcrypt]==1.7.4
+fpdf2==2.8.4
 
 
